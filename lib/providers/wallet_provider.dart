@@ -618,79 +618,110 @@ class WalletProvider with ChangeNotifier {
       debugPrint('🔓 [WalletProvider] Starting unlock transaction...');
       debugPrint('   TXID: $txid');
 
-      // Get the locked transaction
-      final lockedTx = await _rpc!.call('getrawtransaction', [txid, true]);
-      if (lockedTx == null) {
-        throw Exception('Transaction not found');
-      }
+      // Find the transaction in our stored list
+      final storedTx = _timeLockTransactions.firstWhere(
+        (tx) => tx['txid'] == txid,
+        orElse: () => throw Exception('Transaction not found in timelock list'),
+      );
 
-      final locktime = lockedTx['locktime'] ?? 0;
+      final locktime = storedTx['locktime'] as int;
+      final timeLockAddress = storedTx['timeLockAddress'] as String;
+      final amount = storedTx['amount'] as double;
+      
       debugPrint('   Locktime: $locktime');
       debugPrint('   Current block: $_blockHeight');
+      debugPrint('   Timelock address: $timeLockAddress');
+      debugPrint('   Amount: $amount BTC');
 
       // Verify locktime has passed
       if (locktime > 500000000) {
         // Timestamp
         final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         if (locktime > now) {
-          throw Exception('Transaction is still locked (time-based)');
+          throw Exception('Transaction is still locked (time-based). Wait until ${DateTime.fromMillisecondsSinceEpoch(locktime * 1000)}');
         }
       } else {
         // Block height
         if (locktime > _blockHeight) {
-          throw Exception('Transaction is still locked (block-based)');
+          throw Exception('Transaction is still locked (block-based). Need to reach block $locktime (currently at $_blockHeight)');
         }
       }
 
-      // Find the timelock output
-      final vout = lockedTx['vout'] as List;
+      debugPrint('   ✓ Locktime has passed, can unlock now');
+      
+      // Query the transaction to find the timelock output
+      // Try gettransaction first (for wallet transactions), fallback to getrawtransaction with block hash
+      dynamic rawTx;
+      try {
+        rawTx = await _rpc!.call('gettransaction', [txid, true]);
+        // If it's a wallet transaction, extract the hex and decode it
+        if (rawTx != null && rawTx['hex'] != null) {
+          rawTx = await _rpc!.call('decoderawtransaction', [rawTx['hex']]);
+        }
+      } catch (e) {
+        debugPrint('   Transaction not in wallet, trying getrawtransaction...');
+        // Fallback: scan recent blocks to find the transaction
+        for (var i = 0; i < 100; i++) {
+          final blockHeight = _blockHeight - i;
+          if (blockHeight < 0) break;
+          
+          try {
+            final blockHash = await _rpc!.call('getblockhash', [blockHeight]);
+            rawTx = await _rpc!.call('getrawtransaction', [txid, true, blockHash]);
+            if (rawTx != null) {
+              debugPrint('   Found transaction in block $blockHeight');
+              break;
+            }
+          } catch (e2) {
+            continue;
+          }
+        }
+      }
+      
+      if (rawTx == null) {
+        throw Exception('Transaction not found. It may be too old or not yet confirmed.');
+      }
+      
+      // Find the output that went to our timelock address
+      final vouts = rawTx['vout'] as List;
       int? timeLockVout;
-      double? timeLockAmount;
-
-      for (var i = 0; i < vout.length; i++) {
-        final output = vout[i];
-        final scriptPubKey = output['scriptPubKey'];
-        if (scriptPubKey != null) {
-          final asm = scriptPubKey['asm'] ?? '';
-          if (asm.contains('OP_CHECKLOCKTIMEVERIFY')) {
-            timeLockVout = i;
-            timeLockAmount = (output['value'] ?? 0.0).toDouble();
-            break;
-          }
+      int? timeLockSats;
+      
+      for (var i = 0; i < vouts.length; i++) {
+        final vout = vouts[i];
+        final scriptPubKey = vout['scriptPubKey'];
+        if (scriptPubKey != null && scriptPubKey['address'] == timeLockAddress) {
+          timeLockVout = i;
+          timeLockSats = ((vout['value'] as double) * 100000000).round();
+          break;
         }
       }
-
-      if (timeLockVout == null) {
-        throw Exception('No timelock output found');
+      
+      if (timeLockVout == null || timeLockSats == null) {
+        throw Exception('Could not find timelock output in transaction');
       }
+      
+      debugPrint('   Found timelock output at vout $timeLockVout: $timeLockSats sats');
+      
+      // Generate the redeem script (same as when we created the address)
+      final redeemScriptBytes = BitcoinScript.createCLTVScript(_wallet!.publicKeyHash, locktime);
+      final redeemScriptHex = redeemScriptBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      
+      debugPrint('   Redeem script: $redeemScriptHex');
+      
+      // Build unlock transaction
+      final outputSats = timeLockSats - 5000; // Subtract fee
+      final signedTx = _wallet!.buildUnlockTransaction(
+        txid: txid,
+        vout: timeLockVout,
+        amount: timeLockSats,
+        outputAddress: _wallet!.address,
+        outputAmount: outputSats,
+        redeemScript: redeemScriptHex,
+        lockTime: locktime,
+      );
 
-      debugPrint('   Found timelock output at index $timeLockVout');
-      debugPrint('   Amount: ${timeLockAmount?.toStringAsFixed(8)} BTC');
-
-      // Create spending transaction
-      final spendTx = await _rpc!.call('createrawtransaction', [
-        [
-          {
-            'txid': txid,
-            'vout': timeLockVout,
-          }
-        ],
-        {
-          _wallet!.address: timeLockAmount! - 0.0001, // Subtract small fee
-        },
-      ]);
-
-      if (spendTx == null) {
-        throw Exception('Failed to create spending transaction');
-      }
-
-      // Sign the spending transaction
-      final signedResult = await _rpc!.call('signrawtransactionwithwallet', [spendTx]);
-      if (signedResult == null || signedResult['complete'] != true) {
-        throw Exception('Failed to sign spending transaction');
-      }
-
-      final signedTx = signedResult['hex'];
+      debugPrint('   Transaction built and signed');
 
       // Broadcast
       final spendTxid = await _rpc!.call('sendrawtransaction', [signedTx]);
@@ -700,6 +731,10 @@ class WalletProvider with ChangeNotifier {
 
       debugPrint('✅ [WalletProvider] Unlock transaction broadcast!');
       debugPrint('   Spend TXID: $spendTxid');
+
+      // Mark the timelock as unlocked
+      storedTx['status'] = 'unlocked';
+      storedTx['unlockTxId'] = spendTxid;
 
       // Update balance
       await refresh();
