@@ -73,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       children: [
                         const Text(
-                          'Balance',
+                          'Total Balance',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.grey,
@@ -81,12 +81,60 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '${walletProvider.balance.toStringAsFixed(8)} BTC',
+                          '${(walletProvider.unlockedBalance + walletProvider.lockedBalance).toStringAsFixed(8)} BTC',
                           style: const TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
                             color: Colors.orange,
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Unlocked vs Locked breakdown
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Column(
+                              children: [
+                                const Text(
+                                  'Unlocked',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${walletProvider.unlockedBalance.toStringAsFixed(8)} BTC',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 24),
+                            Column(
+                              children: [
+                                const Text(
+                                  'Locked',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${walletProvider.lockedBalance.toStringAsFixed(8)} BTC',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 16),
                         Row(
@@ -293,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                        '${(tx['amount'] / 100000000).toStringAsFixed(8)} BTC',
+                                        '${(tx['amount'] as double).toStringAsFixed(8)} BTC',
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 16,

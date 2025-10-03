@@ -24,6 +24,16 @@ class WalletProvider with ChangeNotifier {
   String? get error => _error;
   List<Map<String, dynamic>> get utxos => _utxos;
   List<Map<String, dynamic>> get timeLockTransactions => _timeLockTransactions;
+  
+  /// Get total locked balance (funds in timelock transactions that haven't been unlocked)
+  double get lockedBalance {
+    return _timeLockTransactions
+        .where((tx) => tx['status'] != 'unlocked')
+        .fold(0.0, (sum, tx) => sum + (tx['amount'] as double));
+  }
+  
+  /// Get unlocked balance (regular wallet balance)
+  double get unlockedBalance => _balance;
 
   /// Generate a new wallet
   void generateNewWallet() {
@@ -430,10 +440,11 @@ class WalletProvider with ChangeNotifier {
       debugPrint('✅ [WalletProvider] Timelock transaction broadcast!');
       debugPrint('   TXID: $txid');
 
-      // Add the timelock transaction to our tracked list
+      // Add the timelock transaction to our tracked list with all info needed for spending
       _timeLockTransactions.add({
         'txid': txid,
         'amount': amountSats / 100000000.0,
+        'amountSats': amountSats, // Store sats for spending
         'locktime': blockHeight,
         'blockHeight': blockHeight, // Add this for home screen compatibility
         'lockTimeType': 'blockheight',
@@ -441,6 +452,7 @@ class WalletProvider with ChangeNotifier {
         'status': 'locked',
         'confirmations': 0,
         'timeLockAddress': timeLockAddress,
+        'vout': 0, // The timelock output is the first output (index 0)
       });
       
       debugPrint('📋 [WalletProvider] Added timelock to list. Total timelocks: ${_timeLockTransactions.length}');
@@ -573,16 +585,18 @@ class WalletProvider with ChangeNotifier {
       debugPrint('✅ [WalletProvider] Timelock transaction broadcast!');
       debugPrint('   TXID: $txid');
 
-      // Add the timelock transaction to our tracked list
+      // Add the timelock transaction to our tracked list with all info needed for spending
       _timeLockTransactions.add({
         'txid': txid,
         'amount': amountSats / 100000000.0,
+        'amountSats': amountSats, // Store sats for spending
         'locktime': unlockTimestamp,
         'lockTimeType': 'timestamp',
         'unlockTime': unlockTime.toIso8601String(),
         'status': 'locked',
         'confirmations': 0,
         'timeLockAddress': timeLockAddress,
+        'vout': 0, // The timelock output is the first output (index 0)
       });
       
       debugPrint('📋 [WalletProvider] Added timelock to list. Total timelocks: ${_timeLockTransactions.length}');
@@ -649,59 +663,11 @@ class WalletProvider with ChangeNotifier {
 
       debugPrint('   ✓ Locktime has passed, can unlock now');
       
-      // Query the transaction to find the timelock output
-      // Try gettransaction first (for wallet transactions), fallback to getrawtransaction with block hash
-      dynamic rawTx;
-      try {
-        rawTx = await _rpc!.call('gettransaction', [txid, true]);
-        // If it's a wallet transaction, extract the hex and decode it
-        if (rawTx != null && rawTx['hex'] != null) {
-          rawTx = await _rpc!.call('decoderawtransaction', [rawTx['hex']]);
-        }
-      } catch (e) {
-        debugPrint('   Transaction not in wallet, trying getrawtransaction...');
-        // Fallback: scan recent blocks to find the transaction
-        for (var i = 0; i < 100; i++) {
-          final blockHeight = _blockHeight - i;
-          if (blockHeight < 0) break;
-          
-          try {
-            final blockHash = await _rpc!.call('getblockhash', [blockHeight]);
-            rawTx = await _rpc!.call('getrawtransaction', [txid, true, blockHash]);
-            if (rawTx != null) {
-              debugPrint('   Found transaction in block $blockHeight');
-              break;
-            }
-          } catch (e2) {
-            continue;
-          }
-        }
-      }
+      // Get stored transaction details (no need to query blockchain)
+      final timeLockVout = storedTx['vout'] as int;
+      final timeLockSats = storedTx['amountSats'] as int;
       
-      if (rawTx == null) {
-        throw Exception('Transaction not found. It may be too old or not yet confirmed.');
-      }
-      
-      // Find the output that went to our timelock address
-      final vouts = rawTx['vout'] as List;
-      int? timeLockVout;
-      int? timeLockSats;
-      
-      for (var i = 0; i < vouts.length; i++) {
-        final vout = vouts[i];
-        final scriptPubKey = vout['scriptPubKey'];
-        if (scriptPubKey != null && scriptPubKey['address'] == timeLockAddress) {
-          timeLockVout = i;
-          timeLockSats = ((vout['value'] as double) * 100000000).round();
-          break;
-        }
-      }
-      
-      if (timeLockVout == null || timeLockSats == null) {
-        throw Exception('Could not find timelock output in transaction');
-      }
-      
-      debugPrint('   Found timelock output at vout $timeLockVout: $timeLockSats sats');
+      debugPrint('   Using stored output: vout $timeLockVout, amount $timeLockSats sats');
       
       // Generate the redeem script (same as when we created the address)
       final redeemScriptBytes = BitcoinScript.createCLTVScript(_wallet!.publicKeyHash, locktime);
