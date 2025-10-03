@@ -1,7 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:convert/convert.dart';
 import '../utils/bitcoin_wallet.dart';
-import '../utils/bitcoin_script.dart' as script;
 import '../services/bitcoin_rpc.dart';
 
 /// Provider for managing wallet state and Bitcoin operations
@@ -204,10 +203,17 @@ class WalletProvider with ChangeNotifier {
           final height = utxo['height'] ?? 0;
           final confirmations = _blockHeight - height + 1;
           
+          // scriptPubKey can be either a string or a map, handle both cases
+          String address = _wallet!.address;
+          final scriptPubKey = utxo['scriptPubKey'];
+          if (scriptPubKey is Map && scriptPubKey.containsKey('address')) {
+            address = scriptPubKey['address'] ?? _wallet!.address;
+          }
+          
           return {
             'txid': utxo['txid'],
             'vout': utxo['vout'],
-            'address': utxo['scriptPubKey']?['address'] ?? _wallet!.address,
+            'address': address,
             'amount': (utxo['amount'] ?? 0.0).toDouble(),
             'height': height,
             'confirmations': confirmations,
@@ -368,56 +374,45 @@ class WalletProvider with ChangeNotifier {
       debugPrint('   Selected ${selectedUTXOs.length} UTXOs');
       debugPrint('   Total input: ${(totalInputSats / 100000000).toStringAsFixed(8)} BTC');
 
-      if (totalInputSats < amountSats + 1000) {
-        throw Exception('Insufficient funds. Need ${((amountSats + 1000) / 100000000).toStringAsFixed(8)} BTC');
+      if (totalInputSats < amountSats + 5000) {
+        throw Exception('Insufficient funds. Need ${((amountSats + 5000) / 100000000).toStringAsFixed(8)} BTC');
       }
 
-      // Build transaction inputs
-      final inputs = selectedUTXOs.map((utxo) => {
+      // Generate timelock P2SH address
+      final timeLockAddress = _wallet!.generateTimeLockAddressFromBlockHeight(blockHeight);
+      debugPrint('   Timelock address: $timeLockAddress');
+
+      // Build transaction inputs with sequence number to enable locktime
+      final inputsForSigning = selectedUTXOs.map((utxo) => {
         'txid': utxo['txid'],
         'vout': utxo['vout'],
+        'amount': ((utxo['amount'] as double) * 100000000).round(),
       }).toList();
 
-      // Create timelock script
-      final scriptBytes = script.BitcoinScript.createCLTVScript(_wallet!.publicKeyHash, blockHeight);
-      final timeLockScript = hex.encode(scriptBytes);
-      debugPrint('   Timelock script: $timeLockScript');
-
-      // Build transaction with timelock output
-      final rawTx = await _rpc!.call('createrawtransaction', [
-        inputs,
-        [
-          {
-            'data': timeLockScript,
-          },
-        ],
-        blockHeight,
-      ]);
-
-      if (rawTx == null) {
-        throw Exception('Failed to create raw transaction');
+      // Calculate change amount (input - amount - fee)
+      final feeSats = 5000; // 5000 sats fee to meet min relay fee
+      final changeSats = totalInputSats - amountSats - feeSats;
+      
+      // Build outputs: timelock address + change to our address
+      final outputsForSigning = <String, int>{};
+      outputsForSigning[timeLockAddress] = amountSats;
+      if (changeSats > 0) {
+        outputsForSigning[_wallet!.address] = changeSats;
       }
 
-      debugPrint('   Raw transaction created');
+      debugPrint('   Timelock output: ${amountSats / 100000000.0} BTC');
+      debugPrint('   Fee: ${feeSats / 100000000.0} BTC');
+      debugPrint('   Change: ${changeSats / 100000000.0} BTC');
 
-      // Fund the transaction (adds change output and sets fee)
-      final fundedResult = await _rpc!.call('fundrawtransaction', [rawTx]);
-      if (fundedResult == null) {
-        throw Exception('Failed to fund transaction');
-      }
-
-      final fundedTx = fundedResult['hex'];
-      final fee = fundedResult['fee'];
-      debugPrint('   Transaction funded, fee: ${fee} BTC');
-
-      // Sign the transaction
-      final signedResult = await _rpc!.call('signrawtransactionwithwallet', [fundedTx]);
-      if (signedResult == null || signedResult['complete'] != true) {
-        throw Exception('Failed to sign transaction');
-      }
-
-      final signedTx = signedResult['hex'];
-      debugPrint('   Transaction signed');
+      // Build and sign the transaction using our wallet
+      // Note: locktime=0 for funding transaction. The CLTV check happens when spending FROM the timelocked address
+      final signedTx = _wallet!.buildAndSignTransaction(
+        inputs: inputsForSigning,
+        outputs: outputsForSigning,
+        locktime: 0, // No locktime on funding tx
+      );
+      
+      debugPrint('   Transaction built and signed');
 
       // Broadcast the transaction
       final txid = await _rpc!.call('sendrawtransaction', [signedTx]);
@@ -427,6 +422,16 @@ class WalletProvider with ChangeNotifier {
 
       debugPrint('✅ [WalletProvider] Timelock transaction broadcast!');
       debugPrint('   TXID: $txid');
+
+      // Add the timelock transaction to our tracked list
+      _timeLockTransactions.add({
+        'txid': txid,
+        'amount': amountSats / 100000000.0,
+        'locktime': blockHeight,
+        'status': 'locked',
+        'confirmations': 0,
+        'timeLockAddress': timeLockAddress,
+      });
 
       // Update balance and transactions
       await updateBalance();
@@ -495,7 +500,7 @@ class WalletProvider with ChangeNotifier {
         selectedUTXOs.add(utxo);
         totalInputSats += ((utxo['amount'] as double) * 100000000).round();
         
-        if (totalInputSats >= amountSats + 1000) {
+        if (totalInputSats >= amountSats + 5000) {
           break;
         }
       }
@@ -503,56 +508,45 @@ class WalletProvider with ChangeNotifier {
       debugPrint('   Selected ${selectedUTXOs.length} UTXOs');
       debugPrint('   Total input: ${(totalInputSats / 100000000).toStringAsFixed(8)} BTC');
 
-      if (totalInputSats < amountSats + 1000) {
+      if (totalInputSats < amountSats + 5000) {
         throw Exception('Insufficient funds');
       }
 
-      // Build transaction inputs
-      final inputs = selectedUTXOs.map((utxo) => {
+      // Generate timelock P2SH address
+      final timeLockAddress = _wallet!.generateTimeLockAddress(unlockTime);
+      debugPrint('   Timelock address: $timeLockAddress');
+
+      // Build transaction inputs with sequence number to enable locktime
+      final inputsForSigning = selectedUTXOs.map((utxo) => {
         'txid': utxo['txid'],
         'vout': utxo['vout'],
+        'amount': ((utxo['amount'] as double) * 100000000).round(),
       }).toList();
 
-      // Create timelock script
-      final scriptBytes = script.BitcoinScript.createCLTVScript(_wallet!.publicKeyHash, unlockTimestamp);
-      final timeLockScript = hex.encode(scriptBytes);
-      debugPrint('   Timelock script: $timeLockScript');
-
-      // Build transaction
-      final rawTx = await _rpc!.call('createrawtransaction', [
-        inputs,
-        [
-          {
-            'data': timeLockScript,
-          },
-        ],
-        unlockTimestamp,
-      ]);
-
-      if (rawTx == null) {
-        throw Exception('Failed to create raw transaction');
+      // Calculate change amount (input - amount - fee)
+      final feeSats = 5000; // 5000 sats fee to meet min relay fee
+      final changeSats = totalInputSats - amountSats - feeSats;
+      
+      // Build outputs: timelock address + change to our address
+      final outputsForSigning = <String, int>{};
+      outputsForSigning[timeLockAddress] = amountSats;
+      if (changeSats > 0) {
+        outputsForSigning[_wallet!.address] = changeSats;
       }
 
-      debugPrint('   Raw transaction created');
+      debugPrint('   Timelock output: ${amountSats / 100000000.0} BTC');
+      debugPrint('   Fee: ${feeSats / 100000000.0} BTC');
+      debugPrint('   Change: ${changeSats / 100000000.0} BTC');
 
-      // Fund the transaction
-      final fundedResult = await _rpc!.call('fundrawtransaction', [rawTx]);
-      if (fundedResult == null) {
-        throw Exception('Failed to fund transaction');
-      }
-
-      final fundedTx = fundedResult['hex'];
-      final fee = fundedResult['fee'];
-      debugPrint('   Transaction funded, fee: ${fee} BTC');
-
-      // Sign the transaction
-      final signedResult = await _rpc!.call('signrawtransactionwithwallet', [fundedTx]);
-      if (signedResult == null || signedResult['complete'] != true) {
-        throw Exception('Failed to sign transaction');
-      }
-
-      final signedTx = signedResult['hex'];
-      debugPrint('   Transaction signed');
+      // Build and sign the transaction using our wallet
+      // Note: locktime=0 for funding transaction. The CLTV check happens when spending FROM the timelocked address
+      final signedTx = _wallet!.buildAndSignTransaction(
+        inputs: inputsForSigning,
+        outputs: outputsForSigning,
+        locktime: 0, // No locktime on funding tx
+      );
+      
+      debugPrint('   Transaction built and signed');
 
       // Broadcast the transaction
       final txid = await _rpc!.call('sendrawtransaction', [signedTx]);
@@ -562,6 +556,16 @@ class WalletProvider with ChangeNotifier {
 
       debugPrint('✅ [WalletProvider] Timelock transaction broadcast!');
       debugPrint('   TXID: $txid');
+
+      // Add the timelock transaction to our tracked list
+      _timeLockTransactions.add({
+        'txid': txid,
+        'amount': amountSats / 100000000.0,
+        'locktime': unlockTimestamp,
+        'status': 'locked',
+        'confirmations': 0,
+        'timeLockAddress': timeLockAddress,
+      });
 
       // Update balance and transactions
       await updateBalance();
