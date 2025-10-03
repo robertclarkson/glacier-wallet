@@ -230,10 +230,15 @@ class WalletProvider with ChangeNotifier {
   /// Load time-locked transactions
   Future<void> _loadTimeLockTransactions() async {
     try {
+      // Preserve manually added timelocks (those with 'timeLockAddress' field)
+      final manualTimelocks = _timeLockTransactions.where((tx) => 
+        tx.containsKey('timeLockAddress')
+      ).toList();
+      
       final mempool = await _rpc!.call('getrawmempool', [true]);
       final confirmed = await _rpc!.call('listtransactions', ['*', 100]);
       
-      _timeLockTransactions = [];
+      _timeLockTransactions = [...manualTimelocks]; // Start with manual timelocks
       
       // Process mempool transactions
       if (mempool != null && mempool is Map) {
@@ -256,6 +261,8 @@ class WalletProvider with ChangeNotifier {
           }
         }
       }
+      
+      debugPrint('📋 [WalletProvider] Loaded timelocks. Manual: ${manualTimelocks.length}, Total: ${_timeLockTransactions.length}');
       
       notifyListeners();
     } catch (e) {
@@ -428,13 +435,22 @@ class WalletProvider with ChangeNotifier {
         'txid': txid,
         'amount': amountSats / 100000000.0,
         'locktime': blockHeight,
+        'blockHeight': blockHeight, // Add this for home screen compatibility
+        'lockTimeType': 'blockheight',
+        'unlockTime': null, // Block height doesn't have a specific time
         'status': 'locked',
         'confirmations': 0,
         'timeLockAddress': timeLockAddress,
       });
+      
+      debugPrint('📋 [WalletProvider] Added timelock to list. Total timelocks: ${_timeLockTransactions.length}');
+      debugPrint('   List contents: $_timeLockTransactions');
 
-      // Update balance and transactions
-      await updateBalance();
+      // Don't call updateBalance() here as it would clear our manually added timelock
+      // Just update the blockchain info and UTXOs
+      await _updateBlockchainInfo();
+      await _updateBalance();
+      await _updateUTXOs();
 
       _isLoading = false;
       notifyListeners();
@@ -562,13 +578,20 @@ class WalletProvider with ChangeNotifier {
         'txid': txid,
         'amount': amountSats / 100000000.0,
         'locktime': unlockTimestamp,
+        'lockTimeType': 'timestamp',
+        'unlockTime': unlockTime.toIso8601String(),
         'status': 'locked',
         'confirmations': 0,
         'timeLockAddress': timeLockAddress,
       });
+      
+      debugPrint('📋 [WalletProvider] Added timelock to list. Total timelocks: ${_timeLockTransactions.length}');
 
-      // Update balance and transactions
-      await updateBalance();
+      // Don't call updateBalance() here as it would clear our manually added timelock
+      // Just update the blockchain info and UTXOs
+      await _updateBlockchainInfo();
+      await _updateBalance();
+      await _updateUTXOs();
 
       _isLoading = false;
       notifyListeners();
