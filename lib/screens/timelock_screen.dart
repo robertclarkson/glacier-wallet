@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/wallet_provider.dart';
 
+// Color constants
+const Color glacierBlue = Color(0xFF4A90E2); // Glacier blue for locked funds
+
 class TimeLockScreen extends StatefulWidget {
   const TimeLockScreen({super.key});
 
@@ -529,6 +532,10 @@ class _TimeLockScreenState extends State<TimeLockScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Text('Create Time-Locked Transaction'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: glacierBlue,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
 
                   const SizedBox(height: 16),

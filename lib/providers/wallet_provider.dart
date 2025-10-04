@@ -32,8 +32,13 @@ class WalletProvider with ChangeNotifier {
         .fold(0.0, (sum, tx) => sum + (tx['amount'] as double));
   }
   
-  /// Get unlocked balance (regular wallet balance)
-  double get unlockedBalance => _balance;
+  /// Get unlocked balance (regular wallet balance minus locked funds)
+  /// The locked funds are in P2SH addresses and should not be counted in the main wallet
+  double get unlockedBalance {
+    // Subtract locked amount from balance to avoid double counting
+    // (locked funds are in separate P2SH addresses but might still appear in scans)
+    return _balance - lockedBalance;
+  }
 
   /// Generate a new wallet
   void generateNewWallet() {
@@ -71,13 +76,6 @@ class WalletProvider with ChangeNotifier {
       await _testConnection();
       
       if (_isConnected && _wallet != null) {
-        // Try to import wallet address to Bitcoin Core (optional, might fail with descriptor wallets)
-        try {
-          await _rpc!.call('importaddress', [_wallet!.address, '', false]);
-          debugPrint('✅ [WalletProvider] Address imported to Bitcoin Core');
-        } catch (e) {
-          debugPrint('⚠️ [WalletProvider] Could not import address (this is OK for descriptor wallets): $e');
-        }
         await refresh();
       }
       
@@ -240,97 +238,25 @@ class WalletProvider with ChangeNotifier {
   /// Load time-locked transactions
   Future<void> _loadTimeLockTransactions() async {
     try {
-      // Preserve manually added timelocks (those with 'timeLockAddress' field)
+      // We manage timelocks entirely in-app, so we just keep the manually added ones
+      // No need to query Bitcoin Core's wallet since we don't use it
+      
+      // Just preserve the manually added timelocks (those with 'timeLockAddress' field)
       final manualTimelocks = _timeLockTransactions.where((tx) => 
         tx.containsKey('timeLockAddress')
       ).toList();
       
-      final mempool = await _rpc!.call('getrawmempool', [true]);
-      final confirmed = await _rpc!.call('listtransactions', ['*', 100]);
-      
-      _timeLockTransactions = [...manualTimelocks]; // Start with manual timelocks
-      
-      // Process mempool transactions
-      if (mempool != null && mempool is Map) {
-        for (var txid in mempool.keys) {
-          final tx = await _rpc!.call('getrawtransaction', [txid, true]);
-          if (tx != null && _isTimeLockTransaction(tx)) {
-            _timeLockTransactions.add(_parseTimeLockTransaction(tx, 'pending'));
-          }
-        }
+      debugPrint('📋 [WalletProvider] Managing timelocks in-app: ${manualTimelocks.length} timelocks');
+      for (var tx in manualTimelocks) {
+        debugPrint('   - TXID: ${tx['txid']}, Status: ${tx['status']}, Unlock TxID: ${tx['unlockTxId']}');
       }
       
-      // Process confirmed transactions
-      if (confirmed != null && confirmed is List) {
-        for (var tx in confirmed) {
-          final txid = tx['txid'];
-          final rawTx = await _rpc!.call('getrawtransaction', [txid, true]);
-          if (rawTx != null && _isTimeLockTransaction(rawTx)) {
-            final status = _getTransactionStatus(rawTx);
-            _timeLockTransactions.add(_parseTimeLockTransaction(rawTx, status));
-          }
-        }
-      }
-      
-      debugPrint('📋 [WalletProvider] Loaded timelocks. Manual: ${manualTimelocks.length}, Total: ${_timeLockTransactions.length}');
+      _timeLockTransactions = manualTimelocks;
       
       notifyListeners();
     } catch (e) {
       debugPrint('❌ [WalletProvider] Failed to load timelock transactions: $e');
     }
-  }
-
-  /// Check if transaction is a time-locked transaction
-  bool _isTimeLockTransaction(Map<String, dynamic> tx) {
-    try {
-      final vout = tx['vout'] as List?;
-      if (vout == null || vout.isEmpty) return false;
-      
-      for (var output in vout) {
-        final scriptPubKey = output['scriptPubKey'];
-        if (scriptPubKey != null) {
-          final asm = scriptPubKey['asm'] ?? '';
-          if (asm.contains('OP_CHECKLOCKTIMEVERIFY') || asm.contains('OP_CLTV')) {
-            return true;
-          }
-        }
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Get transaction status
-  String _getTransactionStatus(Map<String, dynamic> tx) {
-    final locktime = tx['locktime'] ?? 0;
-    
-    if (locktime > _blockHeight) {
-      return 'locked';
-    }
-    
-    // Check if already spent
-    // This is simplified - in production you'd check if outputs are spent
-    return 'ready';
-  }
-
-  /// Parse time-locked transaction
-  Map<String, dynamic> _parseTimeLockTransaction(Map<String, dynamic> tx, String status) {
-    final locktime = tx['locktime'] ?? 0;
-    final vout = tx['vout'] as List? ?? [];
-    
-    double amount = 0.0;
-    for (var output in vout) {
-      amount += (output['value'] ?? 0.0).toDouble();
-    }
-    
-    return {
-      'txid': tx['txid'],
-      'amount': amount,
-      'locktime': locktime,
-      'status': status,
-      'confirmations': tx['confirmations'] ?? 0,
-    };
   }
 
   /// Create time-locked transaction from block height
@@ -664,8 +590,9 @@ class WalletProvider with ChangeNotifier {
       debugPrint('   ✓ Locktime has passed, can unlock now');
       
       // Get stored transaction details (no need to query blockchain)
-      final timeLockVout = storedTx['vout'] as int;
-      final timeLockSats = storedTx['amountSats'] as int;
+      final timeLockVout = storedTx['vout'] as int? ?? 0; // Default to 0 if not stored
+      // Handle old transactions that don't have amountSats field
+      final timeLockSats = storedTx['amountSats'] as int? ?? ((storedTx['amount'] as double) * 100000000).round();
       
       debugPrint('   Using stored output: vout $timeLockVout, amount $timeLockSats sats');
       
@@ -701,6 +628,13 @@ class WalletProvider with ChangeNotifier {
       // Mark the timelock as unlocked
       storedTx['status'] = 'unlocked';
       storedTx['unlockTxId'] = spendTxid;
+      
+      debugPrint('   Marked transaction as unlocked: ${storedTx['txid']}');
+      debugPrint('   Status: ${storedTx['status']}');
+      debugPrint('   Unlock TxID: ${storedTx['unlockTxId']}');
+
+      // Notify listeners first to update UI
+      notifyListeners();
 
       // Update balance
       await refresh();

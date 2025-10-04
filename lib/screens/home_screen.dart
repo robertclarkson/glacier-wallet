@@ -24,9 +24,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Color scheme
+    const Color glacierBlue = Color(0xFF4A90E2); // Glacier blue for locked funds
+    const Color bitcoinOrange = Color(0xFFF7931A); // Bitcoin orange for unlocked funds
+    
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Glacier Wallet'),
+        backgroundColor: glacierBlue,
+        foregroundColor: Colors.white,
+        title: Row(
+          children: [
+            Icon(Icons.ac_unit, color: Colors.white.withOpacity(0.9)), // Glacier/snowflake icon
+            const SizedBox(width: 8),
+            const Text('Glacier Wallet'),
+          ],
+        ),
         actions: [
           Consumer<WalletProvider>(
             builder: (context, walletProvider, child) {
@@ -75,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const Text(
                           'Total Balance',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 24, // 16 * 1.5
                             color: Colors.grey,
                           ),
                         ),
@@ -83,9 +95,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         Text(
                           '${(walletProvider.unlockedBalance + walletProvider.lockedBalance).toStringAsFixed(8)} BTC',
                           style: const TextStyle(
-                            fontSize: 28,
+                            fontSize: 42, // 28 * 1.5
                             fontWeight: FontWeight.bold,
-                            color: Colors.orange,
+                            color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -98,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const Text(
                                   'Unlocked',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 18, // 12 * 1.5
                                     color: Colors.grey,
                                   ),
                                 ),
@@ -106,9 +118,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Text(
                                   '${walletProvider.unlockedBalance.toStringAsFixed(8)} BTC',
                                   style: const TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 21, // 14 * 1.5
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.green,
+                                    color: bitcoinOrange,
                                   ),
                                 ),
                               ],
@@ -119,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const Text(
                                   'Locked',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 18, // 12 * 1.5
                                     color: Colors.grey,
                                   ),
                                 ),
@@ -127,9 +139,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Text(
                                   '${walletProvider.lockedBalance.toStringAsFixed(8)} BTC',
                                   style: const TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 21, // 14 * 1.5
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.orange,
+                                    color: glacierBlue,
                                   ),
                                 ),
                               ],
@@ -158,6 +170,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               },
                               icon: const Icon(Icons.schedule),
                               label: const Text('Time Lock'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: glacierBlue,
+                                foregroundColor: Colors.white,
+                              ),
                             ),
                           ],
                         ),
@@ -178,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const Text(
                           'Blockchain Info',
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: 27, // 18 * 1.5
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -235,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const Text(
                             'Wallet Address',
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 27, // 18 * 1.5
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -253,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     walletProvider.wallet!.address,
                                     style: const TextStyle(
                                       fontFamily: 'monospace',
-                                      fontSize: 12,
+                                      fontSize: 18, // 12 * 1.5
                                     ),
                                   ),
                                 ),
@@ -295,7 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const Text(
                             'Time-Locked Transactions',
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 27, // 18 * 1.5
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -317,10 +333,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               statusColor = Colors.grey;
                             } else if (canSpend) {
                               displayStatus = 'Ready';
-                              statusColor = Colors.green;
+                              statusColor = bitcoinOrange; // Bitcoin orange for ready to unlock
                             } else {
                               displayStatus = 'Locked';
-                              statusColor = Colors.orange;
+                              statusColor = glacierBlue; // Glacier blue for locked
                             }
                             
                             return Container(
@@ -344,7 +360,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         '${(tx['amount'] as double).toStringAsFixed(8)} BTC',
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                          fontSize: 24, // 16 * 1.5
                                           decoration: isUnlocked ? TextDecoration.lineThrough : null,
                                           color: isUnlocked ? Colors.grey : Colors.white,
                                         ),
@@ -361,7 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         child: Text(
                                           displayStatus,
                                           style: const TextStyle(
-                                            fontSize: 12,
+                                            fontSize: 18, // 12 * 1.5
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
@@ -384,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       const SizedBox(height: 4),
                                       Text(
                                         'Blocks remaining: ${tx['blockHeight'] - walletProvider.blockHeight}',
-                                        style: const TextStyle(color: Colors.orange),
+                                        style: const TextStyle(color: glacierBlue),
                                       ),
                                     ],
                                   ] else if (unlockTime != null) ...[
@@ -402,24 +418,98 @@ class _HomeScreenState extends State<HomeScreen> {
                                       const SizedBox(height: 4),
                                       Text(
                                         'Time remaining: ${_getTimeRemaining(unlockTime)}',
-                                        style: const TextStyle(color: Colors.orange),
+                                        style: const TextStyle(color: glacierBlue),
                                       ),
                                     ],
                                   ],
-                                  // Show unlock TxID if already unlocked
-                                  if (isUnlocked && tx['unlockTxId'] != null) ...[
-                                    const SizedBox(height: 8),
-                                    Row(
+                                  const SizedBox(height: 8),
+                                  // Transaction ID with copy button
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[900],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
                                       children: [
-                                        const Icon(Icons.check_circle, size: 14, color: Colors.green),
+                                        const Icon(Icons.tag, size: 12, color: Colors.grey),
                                         const SizedBox(width: 4),
                                         Expanded(
                                           child: Text(
-                                            'Unlocked: ${(tx['unlockTxId'] as String).substring(0, 16)}...',
-                                            style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                            tx['txid'] as String,
+                                            style: const TextStyle(
+                                              fontFamily: 'monospace',
+                                              fontSize: 16, // 11 * 1.5 ≈ 16
+                                              color: Colors.grey,
+                                            ),
                                           ),
                                         ),
+                                        IconButton(
+                                          onPressed: () async {
+                                            await Clipboard.setData(
+                                              ClipboardData(text: tx['txid'] as String),
+                                            );
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('Transaction ID copied to clipboard'),
+                                                  duration: Duration(seconds: 2),
+                                                  backgroundColor: Colors.green,
+                                                ),
+                                              );
+                                            }
+                                          },
+                                          icon: const Icon(Icons.copy, size: 14),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
                                       ],
+                                    ),
+                                  ),
+                                  // Show unlock TxID if already unlocked
+                                  if (isUnlocked && tx['unlockTxId'] != null) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[900],
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.check_circle, size: 12, color: Colors.green),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              'Unlock TX: ${tx['unlockTxId'] as String}',
+                                              style: const TextStyle(
+                                                fontFamily: 'monospace',
+                                                fontSize: 16, // 11 * 1.5 ≈ 16
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            onPressed: () async {
+                                              await Clipboard.setData(
+                                                ClipboardData(text: tx['unlockTxId'] as String),
+                                              );
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text('Unlock transaction ID copied to clipboard'),
+                                                    duration: Duration(seconds: 2),
+                                                    backgroundColor: Colors.green,
+                                                  ),
+                                                );
+                                              }
+                                            },
+                                            icon: const Icon(Icons.copy, size: 14),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                   // Show unlock button only if can spend AND not already unlocked
@@ -459,7 +549,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 ScaffoldMessenger.of(context).showSnackBar(
                                                   SnackBar(
                                                     content: Text('Timelock unlocked! TxID: ${txId.substring(0, 16)}...'),
-                                                    backgroundColor: Colors.green,
+                                                    backgroundColor: bitcoinOrange,
                                                     duration: const Duration(seconds: 4),
                                                   ),
                                                 );
@@ -477,7 +567,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         icon: const Icon(Icons.lock_open),
                                         label: const Text('Unlock & Spend'),
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.green,
+                                          backgroundColor: bitcoinOrange,
                                           foregroundColor: Colors.white,
                                         ),
                                       ),

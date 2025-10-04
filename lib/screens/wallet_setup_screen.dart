@@ -30,9 +30,21 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const Color glacierBlue = Color(0xFF4A90E2); // Glacier blue
+    
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Glacier Bitcoin Wallet'),
+        backgroundColor: glacierBlue,
+        foregroundColor: Colors.white,
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.ac_unit, color: Colors.white.withOpacity(0.9)),
+            const SizedBox(width: 8),
+            const Text('Glacier Bitcoin Wallet'),
+          ],
+        ),
         centerTitle: true,
       ),
       body: Consumer<WalletProvider>(
@@ -44,16 +56,16 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(
-                    Icons.account_balance_wallet,
+                  Icon(
+                    Icons.ac_unit,
                     size: 80,
-                    color: Colors.orange,
+                    color: glacierBlue,
                   ),
                   const SizedBox(height: 24),
                   const Text(
                     'Time-Locked Bitcoin Wallet',
                     style: TextStyle(
-                      fontSize: 24,
+                      fontSize: 36, // 24 * 1.5
                       fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,
@@ -62,7 +74,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                   const Text(
                     'Create time-locked transactions using CHECKTIMELOCKVERIFY',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 24, // 16 * 1.5
                       color: Colors.grey,
                     ),
                     textAlign: TextAlign.center,
@@ -79,7 +91,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                           const Text(
                             'Wallet Setup',
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 27, // 18 * 1.5
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -94,7 +106,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                             const SizedBox(height: 12),
                             const Text(
                               'Note: This generates a demo wallet for regtest use only.',
-                              style: TextStyle(color: Colors.grey, fontSize: 12),
+                              style: TextStyle(color: Colors.grey, fontSize: 18), // 12 * 1.5
                             ),
                           ] else ...[
                             const Text(
@@ -107,7 +119,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                                 Expanded(
                                   child: Text(
                                     'Address: ${walletProvider.wallet!.address}',
-                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                    style: const TextStyle(fontSize: 18, color: Colors.grey), // 12 * 1.5
                                   ),
                                 ),
                                 IconButton(
@@ -151,7 +163,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                               const Text(
                                 'Bitcoin Node',
                                 style: TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 27, // 18 * 1.5
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -305,7 +317,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                           Text(
                             'Setup Instructions',
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: 24, // 16 * 1.5
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -316,7 +328,7 @@ class _WalletSetupScreenState extends State<WalletSetupScreen> {
                             '2. Generate a new wallet above\n\n'
                             '3. Connect to your Bitcoin node\n\n'
                             '4. You can then generate blocks and create time-locked transactions',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                            style: TextStyle(color: Colors.grey, fontSize: 18), // 12 * 1.5
                           ),
                         ],
                       ),
