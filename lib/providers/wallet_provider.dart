@@ -25,10 +25,11 @@ class WalletProvider with ChangeNotifier {
   List<Map<String, dynamic>> get utxos => _utxos;
   List<Map<String, dynamic>> get timeLockTransactions => _timeLockTransactions;
   
-  /// Get total locked balance (funds in timelock transactions that haven't been unlocked)
+  /// Get total locked balance (funds in timelock transactions that are still locked)
+  /// This includes only 'locked' status, not 'ready', 'unlocked', or 'spent'
   double get lockedBalance {
     return _timeLockTransactions
-        .where((tx) => tx['status'] != 'unlocked')
+        .where((tx) => tx['status'] == 'locked' || tx['status'] == 'ready')
         .fold(0.0, (sum, tx) => sum + (tx['amount'] as double));
   }
   
@@ -102,10 +103,19 @@ class WalletProvider with ChangeNotifier {
     if (_rpc == null || _wallet == null) return;
 
     try {
+      debugPrint('🔄 [WalletProvider] === REFRESH START ===');
       await _updateBlockchainInfo();
       await _updateBalance();
       await _updateUTXOs();
       await _loadTimeLockTransactions();
+      
+      // Summary logging
+      debugPrint('📊 [WalletProvider] === REFRESH COMPLETE ===');
+      debugPrint('   Block Height: $_blockHeight');
+      debugPrint('   Unlocked Balance: ${_balance.toStringAsFixed(8)} BTC');
+      debugPrint('   Locked Balance: ${lockedBalance.toStringAsFixed(8)} BTC');
+      debugPrint('   Total Balance: ${(_balance + lockedBalance).toStringAsFixed(8)} BTC');
+      debugPrint('   Timelocks: ${_timeLockTransactions.length}');
     } catch (e) {
       _error = 'Failed to refresh: $e';
       debugPrint('❌ [WalletProvider] Refresh error: $e');
@@ -171,22 +181,40 @@ class WalletProvider with ChangeNotifier {
       ]);
 
       if (result != null) {
-        _balance = (result['total_amount'] ?? 0.0).toDouble();
+        final rawBalance = (result['total_amount'] ?? 0.0).toDouble();
         
         final unspents = result['unspents'] as List? ?? [];
-        debugPrint('📍 [WalletProvider] Found ${unspents.length} UTXOs');
-        debugPrint('   Total balance: ${_balance.toStringAsFixed(8)} BTC');
+        debugPrint('📍 [WalletProvider] Scanning main wallet address: ${_wallet!.address}');
+        debugPrint('   Found ${unspents.length} UTXOs');
+        debugPrint('   Raw total from scantxoutset: ${rawBalance.toStringAsFixed(8)} BTC');
         
-        // Count mature UTXOs
+        // Calculate mature balance (exclude immature coinbase)
+        double matureBalance = 0.0;
         int matureCount = 0;
+        int immatureCount = 0;
+        
         for (var utxo in unspents) {
           final height = utxo['height'] ?? 0;
+          final amount = (utxo['amount'] ?? 0.0).toDouble();
           final confirmations = _blockHeight - height + 1;
+          final txid = utxo['txid'] ?? '';
+          
+          debugPrint('   UTXO: ${txid.substring(0, 8)}... @ block $height = ${amount.toStringAsFixed(8)} BTC ($confirmations conf)');
+          
           if (confirmations >= 100) {
+            matureBalance += amount;
             matureCount++;
+          } else {
+            immatureCount++;
           }
         }
-        debugPrint('   Mature UTXOs (100+ confirmations): $matureCount');
+        
+        debugPrint('   Mature UTXOs: $matureCount (${matureBalance.toStringAsFixed(8)} BTC)');
+        debugPrint('   Immature UTXOs: $immatureCount');
+        
+        // Use total balance (including immature) for display
+        // The wallet should show all funds, but indicate which are spendable
+        _balance = rawBalance;
       }
     } catch (e) {
       debugPrint('❌ [WalletProvider] Failed to update balance: $e');
@@ -231,7 +259,7 @@ class WalletProvider with ChangeNotifier {
     }
   }
 
-  /// Load time-locked transactions
+  /// Load time-locked transactions and rescan their balances
   Future<void> _loadTimeLockTransactions() async {
     try {
       // We manage timelocks entirely in-app, so we just keep the manually added ones
@@ -242,9 +270,56 @@ class WalletProvider with ChangeNotifier {
         tx.containsKey('timeLockAddress')
       ).toList();
       
-      debugPrint('📋 [WalletProvider] Managing timelocks in-app: ${manualTimelocks.length} timelocks');
-      for (var tx in manualTimelocks) {
-        debugPrint('   - TXID: ${tx['txid']}, Status: ${tx['status']}, Unlock TxID: ${tx['unlockTxId']}');
+      debugPrint('📋 [WalletProvider] Rescanning ${manualTimelocks.length} timelock addresses...');
+      
+      // Rescan each timelock address to get actual balance from blockchain
+      for (var i = 0; i < manualTimelocks.length; i++) {
+        final tx = manualTimelocks[i];
+        final timeLockAddress = tx['timeLockAddress'] as String?;
+        
+        if (timeLockAddress != null && timeLockAddress.isNotEmpty) {
+          try {
+            // Scan this specific P2SH address
+            final result = await _rpc!.call('scantxoutset', [
+              'start',
+              ['addr($timeLockAddress)']
+            ]);
+            
+            if (result != null) {
+              final actualBalance = (result['total_amount'] ?? 0.0).toDouble();
+              final unspents = result['unspents'] as List? ?? [];
+              
+              // Update the amount based on actual blockchain balance
+              manualTimelocks[i]['amount'] = actualBalance;
+              
+              // Update status based on block height and whether funds are still there
+              final lockTime = tx['lockTime'] as int? ?? 0;
+              final unlockTxId = tx['unlockTxId'] as String?;
+              
+              if (actualBalance == 0.0) {
+                // No funds at this address
+                if (unlockTxId != null && unlockTxId.isNotEmpty) {
+                  manualTimelocks[i]['status'] = 'unlocked';
+                } else {
+                  manualTimelocks[i]['status'] = 'spent';
+                }
+              } else if (_blockHeight >= lockTime) {
+                // Funds are there and can be unlocked
+                manualTimelocks[i]['status'] = 'ready';
+              } else {
+                // Funds are there but still locked
+                manualTimelocks[i]['status'] = 'locked';
+              }
+              
+              debugPrint('   - Address: $timeLockAddress');
+              debugPrint('     Balance: ${actualBalance.toStringAsFixed(8)} BTC (${unspents.length} UTXOs)');
+              debugPrint('     Status: ${manualTimelocks[i]['status']}');
+              debugPrint('     Lock Time: $lockTime (current block: $_blockHeight)');
+            }
+          } catch (e) {
+            debugPrint('   ⚠️  Failed to scan address $timeLockAddress: $e');
+          }
+        }
       }
       
       _timeLockTransactions = manualTimelocks;
