@@ -32,13 +32,9 @@ class WalletProvider with ChangeNotifier {
         .fold(0.0, (sum, tx) => sum + (tx['amount'] as double));
   }
   
-  /// Get unlocked balance (regular wallet balance minus locked funds)
-  /// The locked funds are in P2SH addresses and should not be counted in the main wallet
-  double get unlockedBalance {
-    // Subtract locked amount from balance to avoid double counting
-    // (locked funds are in separate P2SH addresses but might still appear in scans)
-    return _balance - lockedBalance;
-  }
+  /// Get unlocked balance (just the regular wallet balance)
+  /// Locked funds are in separate P2SH addresses and are tracked separately
+  double get unlockedBalance => _balance;
 
   /// Generate a new wallet
   void generateNewWallet() {
