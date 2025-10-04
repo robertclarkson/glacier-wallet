@@ -321,6 +321,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             final canSpend = walletProvider.canSpendTimeLock(tx);
                             final status = tx['status'] as String?;
                             final isUnlocked = status == 'unlocked';
+                            final confirmations = tx['confirmations'] as int? ?? 0;
+                            final isPending = confirmations == 0; // Unconfirmed transaction
                             final unlockTime = tx['unlockTime'] != null 
                                 ? DateTime.parse(tx['unlockTime']) 
                                 : null;
@@ -328,15 +330,24 @@ class _HomeScreenState extends State<HomeScreen> {
                             // Determine display status
                             String displayStatus;
                             Color statusColor;
-                            if (isUnlocked) {
+                            IconData? statusIcon; // Nullable - only some states have icons
+                            
+                            if (isPending && !isUnlocked) {
+                              displayStatus = 'Pending';
+                              statusColor = Colors.amber;
+                              statusIcon = Icons.hourglass_empty;
+                            } else if (isUnlocked) {
                               displayStatus = 'Spent';
                               statusColor = Colors.grey;
+                              statusIcon = null; // No icon for spent
                             } else if (canSpend) {
                               displayStatus = 'Ready';
                               statusColor = bitcoinOrange; // Bitcoin orange for ready to unlock
+                              statusIcon = null; // No icon for ready
                             } else {
                               displayStatus = 'Locked';
                               statusColor = glacierBlue; // Glacier blue for locked
+                              statusIcon = null; // No icon for locked
                             }
                             
                             return Container(
@@ -347,7 +358,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: statusColor,
-                                  width: 1,
+                                  width: (isPending && !isUnlocked) ? 2 : 1,
                                 ),
                               ),
                               child: Column(
@@ -362,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           fontWeight: FontWeight.bold,
                                           fontSize: 24, // 16 * 1.5
                                           decoration: isUnlocked ? TextDecoration.lineThrough : null,
-                                          color: isUnlocked ? Colors.grey : Colors.white,
+                                          color: isUnlocked ? Colors.grey : ((isPending && !isUnlocked) ? Colors.amber : Colors.white),
                                         ),
                                       ),
                                       Container(
@@ -374,16 +385,54 @@ class _HomeScreenState extends State<HomeScreen> {
                                           color: statusColor,
                                           borderRadius: BorderRadius.circular(12),
                                         ),
-                                        child: Text(
-                                          displayStatus,
-                                          style: const TextStyle(
-                                            fontSize: 18, // 12 * 1.5
-                                            fontWeight: FontWeight.bold,
-                                          ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (statusIcon != null) ...[
+                                              Icon(statusIcon, size: 16, color: Colors.white),
+                                              const SizedBox(width: 4),
+                                            ],
+                                            Text(
+                                              displayStatus,
+                                              style: const TextStyle(
+                                                fontSize: 18, // 12 * 1.5
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],
                                   ),
+                                  // Show pending message
+                                  if (isPending && !isUnlocked) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.info_outline, size: 16, color: Colors.amber),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Waiting for confirmation (mine a block to confirm)',
+                                              style: TextStyle(
+                                                color: Colors.amber.shade200,
+                                                fontSize: 14,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                   const SizedBox(height: 8),
                                   if (lockTimeType == 'blockheight') ...[
                                     Row(

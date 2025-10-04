@@ -243,8 +243,28 @@ class WalletProvider with ChangeNotifier {
       ).toList();
       
       debugPrint('📋 [WalletProvider] Managing timelocks in-app: ${manualTimelocks.length} timelocks');
-      for (var tx in manualTimelocks) {
-        debugPrint('   - TXID: ${tx['txid']}, Status: ${tx['status']}, Unlock TxID: ${tx['unlockTxId']}');
+      
+      // Update confirmations for each timelock transaction
+      for (var i = 0; i < manualTimelocks.length; i++) {
+        final tx = manualTimelocks[i];
+        final txid = tx['txid'] as String?;
+        
+        if (txid != null && txid.isNotEmpty) {
+          try {
+            // Get transaction details to check confirmations
+            final txDetails = await _rpc!.call('getrawtransaction', [txid, true]);
+            
+            if (txDetails != null) {
+              final confirmations = txDetails['confirmations'] ?? 0;
+              manualTimelocks[i]['confirmations'] = confirmations;
+              
+              debugPrint('   - TXID: ${tx['txid']}, Status: ${tx['status']}, Confirmations: $confirmations, Unlock TxID: ${tx['unlockTxId']}');
+            }
+          } catch (e) {
+            debugPrint('   ⚠️  Failed to get confirmations for ${txid}: $e');
+            // Keep the existing confirmations value
+          }
+        }
       }
       
       _timeLockTransactions = manualTimelocks;
