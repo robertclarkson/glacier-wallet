@@ -224,6 +224,13 @@ class _TimeLockScreenState extends State<TimeLockScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
+                    
+                    // Short-term quick select buttons
+                    const Text(
+                      'Quick Select:',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -243,6 +250,38 @@ class _TimeLockScreenState extends State<TimeLockScreen> {
                         _buildQuickBlockButton(
                           '+4320 blocks (~1 month)', 
                           walletProvider.blockHeight + 4320
+                        ),
+                        _buildQuickBlockButton(
+                          '+52560 blocks (~1 year)', 
+                          walletProvider.blockHeight + 52560
+                        ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Long-term options
+                    const Text(
+                      'Super Uber Mega Jigga Long-Term Freeze:',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: glacierBlue),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildQuickBlockButton(
+                          '100 years (~5.2M blocks)', 
+                          walletProvider.blockHeight + 5256000
+                        ),
+                        _buildQuickBlockButton(
+                          '1,000 years (~52.6M blocks)', 
+                          walletProvider.blockHeight + 52560000
+                        ),
+                        _buildQuickBlockButton(
+                          '1 million years (~52.6B blocks)', 
+                          // Limited by Bitcoin protocol: max block height is 499,999,999
+                          499999999
                         ),
                       ],
                     ),

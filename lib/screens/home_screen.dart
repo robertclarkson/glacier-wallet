@@ -525,7 +525,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             builder: (context) => AlertDialog(
                                               title: const Text('Unlock Timelock'),
                                               content: Text(
-                                                'Unlock ${(tx['amount'] / 100000000).toStringAsFixed(8)} BTC and send to your wallet?\n\n'
+                                                'Unlock ${(tx['amount']).toStringAsFixed(8)} BTC and send to your wallet?\n\n'
                                                 'Destination: ${walletProvider.wallet!.address}',
                                               ),
                                               actions: [
