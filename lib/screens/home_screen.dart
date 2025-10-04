@@ -337,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               statusColor = Colors.amber;
                               statusIcon = Icons.hourglass_empty;
                             } else if (isUnlocked) {
-                              displayStatus = 'Spent';
+                              displayStatus = 'Unlocked';
                               statusColor = Colors.grey;
                               statusIcon = null; // No icon for spent
                             } else if (canSpend) {
